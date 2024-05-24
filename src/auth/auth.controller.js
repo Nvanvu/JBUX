@@ -1,6 +1,7 @@
 const HTTPError = require('../common/httpError');
 const UserModel = require('../user/user');
 const RegisterModel = require('../user/register');
+const ImageModel = require('../upload/image');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const mailer = require('../mailer/config');
@@ -36,14 +37,14 @@ const _access = async (req, res) => {
     const { email, hashed } = _get_data;
     const _compare = await bcrypt.compare(email, hashed);
     if (!_compare) {
-        return res.send({ success: true, message: 'Token failed.' });
+        return res.send({ success: false, message: 'Token failed.' });
     }
     const _check_email = await RegisterModel.findOne({ email });
     if (!_check_email) {
-        return res.send({ success: true, message: 'Token failed.' });
+        return res.send({ success: false, message: 'Token failed.' });
     }
     if (_check_email.accessAt) {
-        return res.send({ success: true, message: 'Token failed.' });
+        return res.send({ success: false, message: 'Token failed.' });
     }
     const temporary_password = random_password();
     const salt = await bcrypt.genSalt(10);
@@ -69,16 +70,16 @@ const _access = async (req, res) => {
 
 const login = async (req, res) => {
     const { username, password } = req.body;
-    const User = await UserModel.findOne({ username });
+    const User = await UserModel.findOne({ $and: [{ username }, { _hidden: false }] });
     if (!User) {
-        return res.send({ success: true, message: 'login fail.' });
+        return res.send({ success: false, message: 'Login fail.' });
     }
     const Pass = await bcrypt.compare(password, User.password);
     if (!Pass) {
-        return res.send({ success: true, message: 'login fail.' });
+        return res.send({ success: false, message: 'Login fail.' });
     }
     if (!['ON'].includes(User._status)) {
-        return res.send({ success: true, message: `This account doesn't exist.` });
+        return res.send({ success: false, message: `This account doesn't exist.` });
     }
     const token_ = jwt.sign({
         _id: User._id,
@@ -93,56 +94,103 @@ const login = async (req, res) => {
         success: true,
         message: 'Login successful',
         data: {
+            _id: User._id,
             token_
         }
     });
 }
 
-const _user_getUserById = async (req, res) => {
-    const { _id, username } = req.params;
-    let filter = {}
-    if (_id) {
-        filter._id = _id;
-    }
-    if (username) {
-        filter.username = username;
-    }
-    const User = await UserModel.find(filter);
+const _getUserById = async (req, res) => {
+    const { _id } = req.params;
+    const User = await UserModel.findById(_id, {
+        username: 1,
+        role: 1,
+        admin: 1,
+        accessAt: 1,
+        createdBy: 1,
+        _status: 1,
+        _hidden: 1
+    })
+        .populate('createdBy', 'email -_id');
     if (!User) {
-        return res.send({ success: true, message: 'No data found.' });
+        return res.send({ status: 404, success: false, message: 'No data found.' });
     }
-    const clone = JSON.parse(JSON.stringify(User));
+    const _Data = await ImageModel.find({ createdBy: User._id }).
+        populate({
+            path: 'createdBy',
+            select: ' username role admin accessAt createdBy _status _hidden -_id',
+            populate: { path: 'createdBy', select: 'email -_id' }
+        });
+    if (_Data.length != 0) {
+        return res.send({
+            success: true,
+            data: _Data
+        })
+    }
     res.send({
         success: true,
-        data: { ...clone, password: '', confirm_password: '', temporary_password: '' }
+        data: User
     });
 }
 const getUsers = async (req, res) => {
+    const { accessAt, _status, role, admin, keyword, offset, sort, limit } = req.query;
+    const offsetNumber = offset && Number(offset) ? Number(offset) : 0;
+    const limitNumber = limit && Number(limit) ? Number(limit) : 4;
     let filter = {};
-    const { username, createdBy, _id, accessAt, _status, role, admin } = req.params;
-    if (createdBy) {
-        filter.createdBy = createdBy;
+    let sortCond = {};
+
+    if (sort) {
+        const [sortField, sortDirection] = sort.split('_');
+        if (sortField && sortDirection) {
+            sortCond[sortField] = sortDirection === 'desc' ? -1 : 1;
+        }
     }
-    if (username) {
-        filter.username = username;
-    }
-    if (_id) {
-        filter._id = _id;
-    }
+
     if (accessAt) {
         filter.accessAt = accessAt;
     }
-    if (_status) {
+    if (role) {
         filter.role = role;
+    }
+    if (_status) {
+        filter._status = _status;
     }
     if (admin) {
         filter.admin = admin;
     }
-    const User = await UserModel.find(filter);
-    if (!User) {
-        return res.send({ success: true, message: 'No data found.' });
+
+    if (keyword) {
+        const regex = new RegExp(`${keyword}`, 'i');
+        const regexCond = { $regex: regex };
+        filter[`$or`] = [
+            { username: regexCond },
+            { email: regexCond }
+        ]
     }
-    res.send({ success: true, data: User });
+    const [User, totalUser] = await Promise.all([
+        UserModel.find(filter, {
+            username: 1,
+            role: 1,
+            admin: 1,
+            accessAt: 1,
+            createdBy: 1,
+            _status: 1,
+            _hidden: 1,
+            _image: 1
+        }).populate('createdBy', 'email -_id')
+            .skip(offsetNumber)
+            .limit(limitNumber)
+            .sort(sortCond),
+        UserModel.countDocuments(filter)]);
+    if (totalUser === 0) {
+        return res.send({ success: false, message: 'No data found.' });
+    }
+    const _Filter = User.filter(_h => {
+        if (_h._hidden === false) {
+            return _h;
+        }
+    });
+    res.send({ success: true, data: { _Filter, _totalFilter: _Filter.length } });
 }
 
 const _update_password = async (req, res) => {
@@ -150,7 +198,7 @@ const _update_password = async (req, res) => {
     const { password, confirm_password } = req.body;
     const User_ = await UserModel.findById({ _id });
     if (!User_) {
-        return res.send({ success: true, message: 'No data found.' });
+        return res.send({ success: false, message: 'No data found.' });
     }
     const salt = await bcrypt.genSalt(10);
     const hash_password = await bcrypt.hash(password, salt);
@@ -161,16 +209,16 @@ const _update_password = async (req, res) => {
         confirm_password: hash_confirm_password,
         accessAt: new Date()
     }, { new: true });
-    res.send({ success: true, message: 'update successful.' });
+    res.send({ success: true, message: 'Update successful.' });
 }
 const _update_username = async (req, res) => {
     const { _id } = req.params;
     const data_ = req.body;
-    const User = await UserModel.findById({ _id });
+    const User = await UserModel.findById(_id);
     if (!User) {
-        return res.send({ success: true, message: 'No data found.' });
+        return res.send({ success: false, message: 'No data found.' });
     }
-    await UserModel.findByIdAndUpdate({ _id }, data_, { new: true });
+    await UserModel.findByIdAndUpdate(_id, data_, { new: true });
     res.send({ success: true, message: 'update successful.' });
 }
 const _update_status = async (req, res) => {
@@ -178,7 +226,7 @@ const _update_status = async (req, res) => {
     const data_ = req.body;
     const User = await UserModel.findById({ _id });
     if (!User) {
-        return res.send({ success: true, message: 'No data found.' });
+        return res.send({ success: false, message: 'No data found.' });
     }
     await UserModel.findByIdAndUpdate({ _id }, data_, { new: true });
     res.send({ success: true, message: 'update successful.' });
@@ -189,7 +237,7 @@ const _update_role = async (req, res) => {
     const data_ = req.body;
     const User = await UserModel.findById({ _id });
     if (!User) {
-        return res.send({ success: true, message: 'No data found.' });
+        return res.send({ success: false, message: 'No data found.' });
     }
     await UserModel.findByIdAndUpdate(_id, data_, { new: true });
     res.send({ success: true, message: 'update successful.' });
@@ -199,7 +247,7 @@ const _update_admin = async (req, res) => {
     const data_ = req.body;
     const User = await UserModel.findById({ _id });
     if (!User) {
-        return res.send({ success: true, message: 'No data found.' });
+        return res.send({ success: false, message: 'No data found.' });
     }
     await UserModel.findByIdAndUpdate(_id, data_, { new: true });
     res.send({ success: true, message: 'update successful.' });
@@ -214,23 +262,34 @@ const _reset_passwrod = async (req, res) => {
 const _update_data = async (req, res) => {
     const data_ = req.body;
     const { _id } = req.params;
-    const User = await UserModel.findById({ _id });
+    const User = await UserModel.findById(_id);
     if (!User) {
-        return res.send({ success: true, message: 'No data found.' });
+        return res.send({ success: false, message: 'No data found.' });
     }
-    await UserModel.findByIdAndUpdate({ _id }, { data_ }, { new: true });
-    res.send({ success: true, message: 'update successful.' });
+    await UserModel.findByIdAndUpdate(_id, { data_ }, { new: true });
+    res.send({ success: true, message: 'Update successful.' });
+}
+const _update_image = async (req, res) => {
+    const { _image } = req.body;
+    const { _id } = req.params;
+    const User = await UserModel.findById(_id);
+    if (!User) {
+        return res.send({ success: false, message: 'No data found.' });
+    }
+    const _Image = await UserModel.findByIdAndUpdate(_id, { _image }, { new: true });
+    res.send({ success: true, message: 'Update successful.', data: _Image });
 }
 module.exports = {
     register,
     _access,
     login,
-    _user_getUserById,
+    _getUserById,
     getUsers,
     _update_password,
     _update_status,
     _update_username,
     _update_role,
     _update_admin,
-    _update_data
+    _update_data,
+    _update_image
 }

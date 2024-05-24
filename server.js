@@ -22,5 +22,5 @@ app.use('*', (req, res) => {
 })
 app.use(function (err, req, res, next) {
     console.log(err);
-    return res.status(err.status || 500).send({ success: 0, message: err.message });
+    return res.status(err.status || 500).send({ success: 0, 'Error central message': err.message });
 })

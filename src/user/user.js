@@ -1,4 +1,3 @@
-const { required } = require('joi');
 const mongoose = require('mongoose');
 const UserSchema = new mongoose.Schema({
     username: {
@@ -26,13 +25,21 @@ const UserSchema = new mongoose.Schema({
         type: Date,
         default: null
     },
+    _image: {
+        type: String
+    },
     createdBy: {
-        type: mongoose.Types.ObjectId
+        type: mongoose.Types.ObjectId,
+        ref: 'register'
     },
     _status: {
         type: String,
         enum: ['ON', 'OFF'],
         default: 'ON'
+    },
+    _hidden: {
+        type: Boolean,
+        default: false
     }
 }, {
     timestamps: true

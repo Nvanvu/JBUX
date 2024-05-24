@@ -31,29 +31,19 @@ const ImageUploadToCloud = async (req, res) => {
     const result = await streamUpload(req);
 
     res.send({ success: true, data: result.secure_url });
-}
-
-
-
+};
 const ImageUploadToDatabase = async (req, res) => {
-    try {
-        const { url, title } = req.body;
-
-        const sender = req.user;
-
-        const newUrl = await ImageModel.create({
-            title,
-            url,
-            createdBy: sender._id
-        })
-        res.send({
-            message: 'Upload image successful.',
-            data: newUrl
-        })
-
-    } catch (err) {
-        return res.status(400).send({ success: false, message: err.message });
-    }
-}
+    const { url, title } = req.body;
+    const User_ = req.user;
+    const newUrl = await ImageModel.create({
+        title,
+        url,
+        createdBy: User_._id
+    })
+    res.send({
+        message: 'Upload image successful.',
+        data: newUrl
+    })
+};
 
 module.exports = { ImageUploadToCloud, ImageUploadToDatabase }

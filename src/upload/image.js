@@ -7,7 +7,8 @@ const ImageSchema = new mongoose.Schema({
         type: String
     },
     createdBy: {
-        type: mongoose.Types.ObjectId
+        type: mongoose.Types.ObjectId,
+        ref: 'user'
     }
 }, {
     timestamps: true

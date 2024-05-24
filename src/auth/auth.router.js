@@ -7,12 +7,13 @@ const verify_ = require('../validate/verify_');
 router.post('/cr', middleware(_schemas.register, 'body'), auth.register);
 router.get('/verify', middleware(_schemas._access, 'query'), auth._access);
 router.get('/log', middleware(_schemas.login, 'body'), auth.login);
-router.get('/us', verify_._Token, verify_._Status, verify_._Staff, auth.getUsers);
-router.get('/u/:_id', verify_._Token, verify_._Status, verify_._Role, middleware(_schemas._Id, 'params'), auth._user_getUserById);
+router.get('/us', verify_._Token, verify_._getUsers, middleware(_schemas._set_data, 'query'), auth.getUsers);
+router.get('/u/:_id', verify_._Token, verify_._Role, verify_._getUser, middleware(_schemas._Id, 'params'), auth._getUserById);
 
 router.post('/ud/new/pass/:_id',
-    verify_._Token,
-    verify_._Role,
+    verify_._Token_update_password,
+    verify_._Role, 
+    verify_._Id_,
     middleware(_schemas._Id, 'params'),
     middleware(_schemas._set_password, 'body'),
     auth._update_password);
@@ -39,4 +40,12 @@ router.post('/ub/dat_/by/ad/:_id',
     middleware(_schemas._set_data, 'body'),
     auth._update_data);
 
+router.post('/ud/img/:_id',
+    verify_._Token,
+    verify_._Role,
+    verify_._Id_,
+    middleware(_schemas._Id, 'params'),
+    middleware(_schemas._Image, 'body'),
+    auth._update_image
+)
 module.exports = router;

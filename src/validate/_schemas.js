@@ -10,7 +10,7 @@ const _schemas = {
         password: Joi.string().required().min(4).max(32),
     }),
     _access: Joi.object().keys({
-        _security: Joi.string().required().min(40).max(211)
+        _security: Joi.string().required().min(40).max(272)
     }),
     _Id: Joi.object().keys({
         _id: Joi.string().required().min(24).max(24)
@@ -39,7 +39,9 @@ const _schemas = {
         _status: Joi.string().min(2).max(3),
         role: Joi.string().min(5).max(7),
         admin: Joi.boolean()
-
+    }),
+    _Image: Joi.object().keys({
+        _image: Joi.string().min(70).max(100)  
     })
 }
 module.exports = _schemas;
